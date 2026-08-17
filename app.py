@@ -258,20 +258,25 @@ if arquivo_up is not None:
             icms_estado = "N/A"
             cest_list = "N/A"
             
-            dados_ncm = lefisc.buscar_dados_ncm(ncm)
+        dados_ncm = lefisc.buscar_dados_ncm(ncm)
             
             if dados_ncm:
                 if isinstance(dados_ncm, dict) and "erro" in dados_ncm:
                     st.warning(f"Erro na NCM {ncm}: O Lefisc retornou {dados_ncm['erro']}")
                 else:
+                    # BLINDAGEM MESTRA: Se o Lefisc retornar uma lista, pega o primeiro item. Se for dicionário, usa direto.
                     if isinstance(dados_ncm, list) and len(dados_ncm) > 0:
-                        dados_ncm = dados_ncm[0]
-                        
-                    desc_oficial = dados_ncm.get('descricao', 'N/A')
-                    html_piscofins = dados_ncm.get('piscofins', '')
+                        item_ncm = dados_ncm[0]
+                    elif isinstance(dados_ncm, dict):
+                        item_ncm = dados_ncm
+                    else:
+                        item_ncm = {}
+
+                    desc_oficial = item_ncm.get('descricao', 'N/A')
+                    html_piscofins = item_ncm.get('piscofins', '')
                     texto_piscofins = extrair_piscofins(html_piscofins, letra_piscofins)
                     
-                    aliquotas = dados_ncm.get('aliquotas', [])
+                    aliquotas = item_ncm.get('aliquotas', [])
                     for alq in aliquotas:
                         if alq.get('estado') == uf_selecionada:
                             icms_estado = alq.get('icms', 'Não encontrado')

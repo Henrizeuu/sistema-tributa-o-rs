@@ -339,33 +339,17 @@ if arquivo_up is not None:
             cest_list = lefisc.buscar_cest(ncm)
             
             # Pede a análise estruturada para a IA mandando todo o cenário montado
+            # Pede a análise estruturada para a IA
             parecer_ia = auditar_com_gemini(produto, ncm, desc_oficial, texto_piscofins, icms_completo, cest_list)
             
-            # Fatiando a resposta da IA para criar colunas separadas
-            res_desc, res_icms, res_pis, res_cest = "N/A", "N/A", "N/A", "N/A"
-            
-            for linha in parecer_ia.split('\n'):
-                if ":" in linha:
-                    chave, valor = linha.split(":", 1)
-                    chave = chave.strip().upper()
-                    valor = valor.strip()
-                    if "DESCRICAO" in chave:
-                        res_desc = valor
-                    elif "ICMS" in chave:
-                        res_icms = valor
-                    elif "PIS" in chave:
-                        res_pis = valor
-                    elif "CEST" in chave:
-                        res_cest = valor
-
-            # Atribuindo cada dado à sua respectiva coluna
-            df.at[i, 'Analise_Descricao'] = res_desc
-            df.at[i, 'Tributacao_ICMS'] = res_icms
-            df.at[i, 'PIS_COFINS'] = res_pis
-            df.at[i, 'Codigo_CEST'] = res_cest
+            # Como a resposta já é um dicionário JSON, jogamos direto nas colunas
+            df.at[i, 'Analise_Descricao'] = parecer_ia.get('descricao', 'N/A')
+            df.at[i, 'Tributacao_ICMS'] = parecer_ia.get('icms', 'N/A')
+            df.at[i, 'PIS_COFINS'] = parecer_ia.get('pis_cofins', 'N/A')
+            df.at[i, 'Codigo_CEST'] = parecer_ia.get('cest', 'N/A')
             
             barra_progresso.progress((i + 1) / len(df))
-            time.sleep(1) 
+            time.sleep(1)
             
         status_text.text("Auditoria Concluída!")
         

@@ -13,7 +13,8 @@ st.set_page_config(page_title="Auditoria NCM - Lefisc", layout="wide")
 
 try:
     genai.configure(api_key=st.secrets["gemini_api_key"])
-    model = genai.GenerativeModel('gemini-2.5-flash-lite')
+    # 1. Correção do Modelo da IA
+    model = genai.GenerativeModel('gemini-3.5-flash-lite')
 except Exception as e:
     st.error("Erro ao configurar Gemini API. Verifique os Secrets.")
 
@@ -36,10 +37,6 @@ class LefiscClient:
 
     def autenticar(self):
         url_login = "https://www.lefisc.com.br/api/validacao/cliente/login"
-        
-        # O truque final: Transformando em multipart/form-data
-        # Usamos tuplas (None, valor) no parâmetro files do requests
-        # para simular perfeitamente um objeto FormData() do Javascript
         payload_multipart = {
             "Usuario": (None, str(self.usuario)),
             "Senha": (None, str(self.senha)),
@@ -47,7 +44,6 @@ class LefiscClient:
         }
         
         try:
-            # Enviando via 'files=' em vez de 'json=' ou 'data='
             res = self.session.post(url_login, files=payload_multipart, timeout=10)
             
             if res.status_code == 200:
@@ -80,9 +76,10 @@ class LefiscClient:
                 dados = res.json()
                 self.cache_ncm[ncm_limpa] = dados
                 return dados
+            else:
+                return {"erro": f"Status {res.status_code}"}
         except Exception as e:
-            pass
-        return None
+            return {"erro": str(e)}
 
     def buscar_cest(self, ncm_limpa):
         if ncm_limpa in self.cache_cest:
@@ -118,7 +115,9 @@ class LefiscClient:
             for com in comentarios:
                 textos_cest.append(com.get_text(separator=" | ", strip=True))
                 
-            resultado = "\\n".join(textos_cest)
+            resultado = "\n".join(textos_cest)
+            if not resultado:
+                resultado = "Nenhum CEST encontrado."
             self.cache_cest[ncm_limpa] = resultado
             return resultado
             
@@ -133,7 +132,7 @@ def extrair_piscofins(html_piscofins, opcao_escolhida):
         return "PIS/COFINS não encontrado"
         
     soup = BeautifulSoup(html_piscofins, 'html.parser')
-    texto_puro = soup.get_text(separator="\\n", strip=True)
+    texto_puro = soup.get_text(separator="\n", strip=True)
     
     marcadores = ["A)REGRA GERAL", "B)VENDA PARA PESSOA", "C)VENDA EFETUADA", "D)INDUSTRIALIZAÇÃO"]
     
@@ -164,7 +163,7 @@ def auditar_com_gemini(produto, ncm, desc_oficial, pis_cofins, icms, cest):
     NCM: {ncm}
     Descrição Oficial NCM: "{desc_oficial}"
     
-    Tributação Encontrada:
+    Tributação Encontrada no Lefisc:
     - PIS/COFINS: {pis_cofins}
     - ICMS (Alíquota): {icms}
     - Relação de CESTs para esta NCM: {cest}
@@ -224,7 +223,6 @@ if arquivo_up is not None:
             st.stop()
             
         with st.spinner("Autenticando no Lefisc..."):
-            # Se a autenticação falhar, o script para aqui e mostra o erro
             if not lefisc.autenticar():
                 st.stop()
             st.success("Autenticado com sucesso!")
@@ -234,9 +232,16 @@ if arquivo_up is not None:
         
         for i, row in df.iterrows():
             produto = str(row.get('Descricao_Produto', ''))
-            ncm = str(row.get('NCM', '')).replace('.', '').strip()
             
-            status_text.text(f"Processando [{i+1}/{len(df)}]: {produto} (NCM: {ncm})")
+            # 2. Correção Mestra da formatação do NCM no Excel
+            ncm_raw = str(row.get('NCM', ''))
+            # Pega só o que vem antes do ponto decimal e filtra apenas os números
+            ncm_raw = ncm_raw.split('.')[0]
+            ncm = ''.join(filter(str.isdigit, ncm_raw))
+            # Garante que tenha 8 dígitos (ex: 03007000)
+            ncm = ncm.zfill(8)
+            
+            status_text.text(f"Processando [{i+1}/{len(df)}]: {produto} (NCM Limpa: {ncm})")
             
             desc_oficial = "N/A"
             texto_piscofins = "N/A"
@@ -244,24 +249,31 @@ if arquivo_up is not None:
             cest_list = "N/A"
             
             dados_ncm = lefisc.buscar_dados_ncm(ncm)
+            
             if dados_ncm:
-                if isinstance(dados_ncm, list) and len(dados_ncm) > 0:
-                    dados_ncm = dados_ncm[0]
+                if isinstance(dados_ncm, dict) and "erro" in dados_ncm:
+                    st.warning(f"Erro na NCM {ncm}: O Lefisc retornou {dados_ncm['erro']}")
+                else:
+                    if isinstance(dados_ncm, list) and len(dados_ncm) > 0:
+                        dados_ncm = dados_ncm[0]
+                        
+                    desc_oficial = dados_ncm.get('descricao', 'N/A')
+                    html_piscofins = dados_ncm.get('piscofins', '')
+                    texto_piscofins = extrair_piscofins(html_piscofins, letra_piscofins)
                     
-                desc_oficial = dados_ncm.get('descricao', 'N/A')
-                html_piscofins = dados_ncm.get('piscofins', '')
-                texto_piscofins = extrair_piscofins(html_piscofins, letra_piscofins)
-                
-                aliquotas = dados_ncm.get('aliquotas', [])
-                for alq in aliquotas:
-                    if alq.get('estado') == uf_selecionada:
-                        icms_estado = alq.get('icms', 'Não encontrado')
-                        break
+                    aliquotas = dados_ncm.get('aliquotas', [])
+                    for alq in aliquotas:
+                        if alq.get('estado') == uf_selecionada:
+                            icms_estado = alq.get('icms', 'Não encontrado')
+                            break
             
             cest_list = lefisc.buscar_cest(ncm)
             parecer_ia = auditar_com_gemini(produto, ncm, desc_oficial, texto_piscofins, icms_estado, cest_list)
             
+            # 3. Adicionando TUDO no DataFrame Final!
             df.at[i, 'Descricao_Lefisc'] = desc_oficial
+            df.at[i, 'PIS_COFINS'] = texto_piscofins
+            df.at[i, 'CEST_Lefisc'] = cest_list
             df.at[i, f'ICMS_{uf_selecionada}'] = icms_estado
             df.at[i, 'Parecer_Auditoria_IA'] = parecer_ia
             

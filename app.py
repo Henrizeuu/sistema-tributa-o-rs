@@ -35,7 +35,7 @@ class LefiscClient:
         self.cache_ncm = {}
         self.cache_cest = {}
 
-def autenticar(self):
+    def autenticar(self):
         url_login = "https://www.lefisc.com.br/api/validacao/cliente/login"
         payload_multipart = {
             "Usuario": (None, str(self.usuario)),

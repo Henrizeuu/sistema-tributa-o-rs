@@ -166,21 +166,24 @@ def extrair_piscofins(html_piscofins, opcao_escolhida):
 
 def auditar_com_gemini(produto, ncm, desc_oficial, pis_cofins, icms, cest):
     prompt = f"""
-    Você é un auditor fiscal especialista na legislação tributária brasileira.
-    Analise o enquadramento do produto abaixo:
+    Você é um auditor fiscal especialista na legislação tributária brasileira.
+    Analise o enquadramento do produto com base nos dados oficiais do Lefisc abaixo:
     
     PRODUTO DO CLIENTE: "{produto}"
     NCM: {ncm}
     Descrição Oficial NCM: "{desc_oficial}"
     
     Tributação Encontrada no Lefisc:
-    - PIS/COFINS: {pis_cofins}
-    - ICMS (Alíquota): {icms}
-    - Relação de CESTs para esta NCM: {cest}
+    - PIS/COFINS (Regra do Cenário): {pis_cofins}
+    - ICMS (Alíquota do Estado): {icms}
+    - Relação de CESTs disponíveis para esta NCM: {cest}
     
-    Responda em formato de relatório direto:
-    1. A NCM está CORRETA para este produto? (Sim/Não e breve motivo)
-    2. Qual o código CEST mais adequado dentre os listados para este produto?
+    Gere a resposta EXATAMENTE no formato abaixo, sem adicionar introduções ou textos extras:
+    
+    descrição: [Diga 'sim' se a descrição do produto faz sentido com a NCM, ou 'não' acompanhado de uma justificativa curta]
+    icms: [Informe se a tributação é normal, substituição tributária, isenção ou alíquota reduzida com base nos dados]
+    pis e cofins: [Informe se é monofásico, alíquota zero, cumulativo, não cumulativo ou tributado normalmente]
+    cest: [Escolha e indique o código CEST numérico de 7 dígitos mais adequado dentre a lista do Lefisc para este produto exato]
     """
     try:
         response = model.generate_content(prompt)

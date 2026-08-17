@@ -51,18 +51,24 @@ class LefiscClient:
                 self.token = dados.get("token")
                 self.hash_auth = dados.get("hash")
                 
-                # 1. Autorização via Header
+                # 1. PEGANDO O ID DO CLIENTE!
+                self.id_cliente = dados.get("id") 
+                
+                # 2. Autorização via Header (adicionando o IdCliente aqui também)
                 self.session.headers.update({
                     "Authorization": f"Bearer {self.token}",
-                    "token": self.token
+                    "token": self.token,
+                    "IdCliente": str(self.id_cliente)
                 })
                 
-                # 2. O GRANDE TRUQUE: Injetando os cookies manualmente na sessão
-                # Isso simula o comportamento exato do navegador no site deles
-                self.session.cookies.set("hash", self.hash_auth, domain="www.lefisc.com.br")
-                self.session.cookies.set("token", self.token, domain="www.lefisc.com.br")
-                self.session.cookies.set("usuario", self.usuario, domain="www.lefisc.com.br")
-                self.session.cookies.set("login", "Sim", domain="www.lefisc.com.br")
+                # 3. Injetando TODOS os cookies exigidos pelo sistema deles (inclusive o idCliente)
+                self.session.cookies.update({
+                    "hash": self.hash_auth,
+                    "token": self.token,
+                    "usuario": self.usuario,
+                    "login": "Sim",
+                    "idCliente": str(self.id_cliente)
+                })
                 
                 return True
             else:
@@ -80,22 +86,21 @@ class LefiscClient:
         ncm_formatada = f"{ncm_limpa[:4]}.{ncm_limpa[4:6]}.{ncm_limpa[6:]}"
         url_ncm = f"https://www.lefisc.com.br/api/monitoramentoNCM/Cliente/dadosNCM/{ncm_formatada}/{self.hash_auth}"
         
-        # 3. A "Carteirada": Mostrando pro servidor que estamos dentro do site
+        # A "Carteirada": Mostrando pro servidor que estamos navegando dentro do site
         headers_extras = {
             "Referer": "https://www.lefisc.com.br/monitoramentoncm/",
-            "Origin": "https://www.lefisc.com.br"
+            "Origin": "https://www.lefisc.com.br",
+            "Accept": "application/json, text/plain, */*"
         }
         
         try:
-            # Passando os headers extras na chamada GET
             res = self.session.get(url_ncm, headers=headers_extras, timeout=10)
-            
             if res.status_code == 200:
                 dados = res.json()
                 self.cache_ncm[ncm_limpa] = dados
                 return dados
             else:
-                return {"erro": f"Status {res.status_code} | Resposta: {res.text}"}
+                return {"erro": f"Status {res.status_code} | Resposta: {res.text} | URL Testada: {url_ncm}"}
         except Exception as e:
             return {"erro": str(e)}
 

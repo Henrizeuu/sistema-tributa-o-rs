@@ -5,7 +5,6 @@ from bs4 import BeautifulSoup
 import google.generativeai as genai
 import time
 import io
-import json
 
 # ==========================================
 # CONFIGURAÇÕES INICIAIS
@@ -32,11 +31,10 @@ class LefiscClient:
         self.senha = senha
         self.token = None
         self.hash_auth = None
-        
         self.cache_ncm = {}
         self.cache_cest = {}
 
-def autenticar(self):
+    def autenticar(self):
         url_login = "https://www.lefisc.com.br/api/validacao/cliente/login"
         payload = {
             "Usuario": self.usuario,
@@ -45,8 +43,8 @@ def autenticar(self):
         }
         
         try:
-            # Mudamos de json=payload para data=payload (simula um formulário real)
-            res = self.session.post(url_login, data=payload, timeout=10)
+            # Enviando como JSON e capturando o erro real
+            res = self.session.post(url_login, json=payload, timeout=10)
             
             if res.status_code == 200:
                 dados = res.json()
@@ -58,7 +56,7 @@ def autenticar(self):
                 })
                 return True
             else:
-                # SE FALHAR, VAI MOSTRAR O ERRO EXATO NA TELA DO STREAMLIT
+                # SE O LEFISC BARRAR, ISSO AQUI VAI TE MOSTRAR O MOTIVO EXATO NA TELA
                 st.error(f"O servidor recusou o login. Código: {res.status_code} | Resposta: {res.text}")
                 return False
                 
@@ -117,7 +115,7 @@ def autenticar(self):
             for com in comentarios:
                 textos_cest.append(com.get_text(separator=" | ", strip=True))
                 
-            resultado = "\n".join(textos_cest)
+            resultado = "\\n".join(textos_cest)
             self.cache_cest[ncm_limpa] = resultado
             return resultado
             
@@ -132,7 +130,7 @@ def extrair_piscofins(html_piscofins, opcao_escolhida):
         return "PIS/COFINS não encontrado"
         
     soup = BeautifulSoup(html_piscofins, 'html.parser')
-    texto_puro = soup.get_text(separator="\n", strip=True)
+    texto_puro = soup.get_text(separator="\\n", strip=True)
     
     marcadores = ["A)REGRA GERAL", "B)VENDA PARA PESSOA", "C)VENDA EFETUADA", "D)INDUSTRIALIZAÇÃO"]
     
@@ -223,15 +221,13 @@ if arquivo_up is not None:
             st.stop()
             
         with st.spinner("Autenticando no Lefisc..."):
+            # Se a autenticação falhar, o script para aqui e mostra o erro
             if not lefisc.autenticar():
-                st.error("Falha ao logar no Lefisc. Verifique as credenciais.")
                 st.stop()
             st.success("Autenticado com sucesso!")
             
         barra_progresso = st.progress(0)
         status_text = st.empty()
-        
-        resultados = []
         
         for i, row in df.iterrows():
             produto = str(row.get('Descricao_Produto', ''))

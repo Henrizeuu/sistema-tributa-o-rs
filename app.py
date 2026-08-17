@@ -35,21 +35,20 @@ class LefiscClient:
         self.cache_cest = {}
 
     def autenticar(self):
-        url_login = "https://www.lefisc.com.br"
+        url_login = "https://www.lefisc.com.br/api/validacao/cliente/login"
         
-        # Mandando chaves duplicadas (maiúsculas e minúsculas) 
-        # para evitar qualquer bloqueio do ASP.NET
-        payload = {
-            "Usuario": self.usuario,
-            "Senha": self.senha,
-            "usuario": self.usuario,
-            "senha": self.senha,
-            "browserId": "d42e01f74d243ddbe00ee3acb9589f9c" 
+        # O truque final: Transformando em multipart/form-data
+        # Usamos tuplas (None, valor) no parâmetro files do requests
+        # para simular perfeitamente um objeto FormData() do Javascript
+        payload_multipart = {
+            "Usuario": (None, str(self.usuario)),
+            "Senha": (None, str(self.senha)),
+            "browserId": (None, "d42e01f74d243ddbe00ee3acb9589f9c")
         }
         
         try:
-            # A MÁGICA ESTÁ AQUI: data=payload envia como Form Data (Formulário real)
-            res = self.session.post(url_login, data=payload, timeout=10)
+            # Enviando via 'files=' em vez de 'json=' ou 'data='
+            res = self.session.post(url_login, files=payload_multipart, timeout=10)
             
             if res.status_code == 200:
                 dados = res.json()
@@ -65,7 +64,7 @@ class LefiscClient:
                 return False
                 
         except Exception as e:
-            st.error(f"Erro ao tentar conectar com o Lefisc: {e}")
+            st.error(f"Erro ao conectar: {e}")
             return False
 
     def buscar_dados_ncm(self, ncm_limpa):

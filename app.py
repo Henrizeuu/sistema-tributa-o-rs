@@ -35,7 +35,7 @@ class LefiscClient:
         self.cache_ncm = {}
         self.cache_cest = {}
 
-    def autenticar(self):
+def autenticar(self):
         url_login = "https://www.lefisc.com.br/api/validacao/cliente/login"
         payload_multipart = {
             "Usuario": (None, str(self.usuario)),
@@ -51,9 +51,19 @@ class LefiscClient:
                 self.token = dados.get("token")
                 self.hash_auth = dados.get("hash")
                 
+                # 1. Autorização via Header
                 self.session.headers.update({
-                    "Authorization": f"Bearer {self.token}"
+                    "Authorization": f"Bearer {self.token}",
+                    "token": self.token
                 })
+                
+                # 2. O GRANDE TRUQUE: Injetando os cookies manualmente na sessão
+                # Isso simula o comportamento exato do navegador no site deles
+                self.session.cookies.set("hash", self.hash_auth, domain="www.lefisc.com.br")
+                self.session.cookies.set("token", self.token, domain="www.lefisc.com.br")
+                self.session.cookies.set("usuario", self.usuario, domain="www.lefisc.com.br")
+                self.session.cookies.set("login", "Sim", domain="www.lefisc.com.br")
+                
                 return True
             else:
                 st.error(f"O servidor recusou o login. Código: {res.status_code} | Resposta: {res.text}")
@@ -70,15 +80,22 @@ class LefiscClient:
         ncm_formatada = f"{ncm_limpa[:4]}.{ncm_limpa[4:6]}.{ncm_limpa[6:]}"
         url_ncm = f"https://www.lefisc.com.br/api/monitoramentoNCM/Cliente/dadosNCM/{ncm_formatada}/{self.hash_auth}"
         
+        # 3. A "Carteirada": Mostrando pro servidor que estamos dentro do site
+        headers_extras = {
+            "Referer": "https://www.lefisc.com.br/monitoramentoncm/",
+            "Origin": "https://www.lefisc.com.br"
+        }
+        
         try:
-            res = self.session.get(url_ncm, timeout=10)
+            # Passando os headers extras na chamada GET
+            res = self.session.get(url_ncm, headers=headers_extras, timeout=10)
+            
             if res.status_code == 200:
                 dados = res.json()
                 self.cache_ncm[ncm_limpa] = dados
                 return dados
             else:
-                # Agora ele vai cuspir a URL exata que tentou acessar e o motivo do bloqueio
-                return {"erro": f"Status {res.status_code} | Resposta: {res.text} | URL Testada: {url_ncm}"}
+                return {"erro": f"Status {res.status_code} | Resposta: {res.text}"}
         except Exception as e:
             return {"erro": str(e)}
 

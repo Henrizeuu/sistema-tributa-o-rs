@@ -5,6 +5,8 @@ from bs4 import BeautifulSoup
 import google.generativeai as genai
 import time
 import io
+import json
+import re  # <--- ADICIONE ESTA LINHA AQUI
 
 # ==========================================
 # CONFIGURAÇÕES INICIAIS
@@ -223,18 +225,25 @@ def auditar_com_gemini(produto, ncm, desc_oficial, pis_cofins, icms_completo, ce
     }}
     """
     try:
-        response = model.generate_content(prompt)
-        texto = response.text.strip()
+        # A API do Gemini permite forçar a saída para JSON nativamente
+        response = model.generate_content(
+            prompt,
+            generation_config={"response_mime_type": "application/json"}
+        )
+        texto = response.text
         
-        # Limpa formatações Markdown que a IA possa tentar colocar
-        if texto.startswith("```json"):
-            texto = texto[7:-3]
-        elif texto.startswith("```"):
-            texto = texto[3:-3]
+        # Pinça de segurança: ignora qualquer fala da IA e pega só o bloco JSON
+        match = re.search(r'\{.*\}', texto, re.DOTALL)
+        
+        if match:
+            json_str = match.group(0)
+            return json.loads(json_str)
+        else:
+            return {"descricao": "ERRO_REGEX", "icms": "ERRO_REGEX", "pis_cofins": "ERRO_REGEX", "cest": "ERRO_REGEX"}
             
-        return json.loads(texto.strip())
     except Exception as e:
-        return {"descricao": "ERRO", "icms": "ERRO", "pis_cofins": "ERRO", "cest": "ERRO"}
+        # Se quebrar, ele escreve o erro exato na primeira coluna da planilha
+        return {"descricao": f"FALHA IA: {str(e)}", "icms": "ERRO", "pis_cofins": "ERRO", "cest": "ERRO"}
 
 # ==========================================
 # INTERFACE STREAMLIT E PROCESSAMENTO

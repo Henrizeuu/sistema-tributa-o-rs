@@ -35,7 +35,7 @@ class LefiscClient:
         self.cache_cest = {}
 
     def autenticar(self):
-        url_login = "https://www.lefisc.com.br/api/validacao/cliente/login"
+        url_login = "https://www.lefisc.com.br/"
         payload = {
             "Usuario": self.usuario,
             "Senha": self.senha,

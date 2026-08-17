@@ -36,7 +36,7 @@ class LefiscClient:
         self.cache_ncm = {}
         self.cache_cest = {}
 
-    def autenticar(self):
+def autenticar(self):
         url_login = "https://www.lefisc.com.br/api/validacao/cliente/login"
         payload = {
             "Usuario": self.usuario,
@@ -45,7 +45,9 @@ class LefiscClient:
         }
         
         try:
-            res = self.session.post(url_login, json=payload, timeout=10)
+            # Mudamos de json=payload para data=payload (simula um formulário real)
+            res = self.session.post(url_login, data=payload, timeout=10)
+            
             if res.status_code == 200:
                 dados = res.json()
                 self.token = dados.get("token")
@@ -56,9 +58,12 @@ class LefiscClient:
                 })
                 return True
             else:
+                # SE FALHAR, VAI MOSTRAR O ERRO EXATO NA TELA DO STREAMLIT
+                st.error(f"O servidor recusou o login. Código: {res.status_code} | Resposta: {res.text}")
                 return False
+                
         except Exception as e:
-            st.error(f"Erro na autenticação: {e}")
+            st.error(f"Erro ao tentar conectar com o Lefisc: {e}")
             return False
 
     def buscar_dados_ncm(self, ncm_limpa):

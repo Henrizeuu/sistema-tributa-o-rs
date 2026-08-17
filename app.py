@@ -192,34 +192,49 @@ def extrair_piscofins(html_piscofins, opcao_escolhida):
 
 def auditar_com_gemini(produto, ncm, desc_oficial, pis_cofins, icms_completo, cest):
     prompt = f"""
-    Você é um auditor fiscal especialista na legislação tributária brasileira.
-    Analise o enquadramento do produto com base nos dados oficiais do Lefisc abaixo.
+    Você é um sistema extrator de dados tributários estruturados.
     
-    ATENÇÃO ÀS REGRAS ESTRITAS DA ANÁLISE:
-    1. A empresa cliente é optante pelo SIMPLES NACIONAL.
-    2. A empresa realiza vendas EXCLUSIVAMENTE PARA CONSUMIDOR FINAL.
-    3. Para o ICMS, NUNCA deduza Substituição Tributária (ST) apenas pela existência de um código CEST. Baseie-se APENAS no texto exato do ICMS fornecido. Se houver notas de isenção ou redução, destaque-as.
+    CENÁRIO DA EMPRESA:
+    - Optante pelo SIMPLES NACIONAL.
+    - Vendas EXCLUSIVAMENTE PARA CONSUMIDOR FINAL.
     
-    PRODUTO DO CLIENTE: "{produto}"
+    REGRAS DE CLASSIFICAÇÃO (SIGA RIGOROSAMENTE):
+    1. ICMS: Ter um código CEST NÃO significa que a operação é sujeita à Substituição Tributária (ST) no Estado. O CEST é apenas uma nomenclatura nacional. 
+       -> REGRA DE OURO: Você SÓ PODE classificar como "Substituição Tributária" se as palavras "Substituição", "Retido" ou "ST" estiverem EXPRESSAMENTE ESCRITAS no campo "Texto ICMS". 
+       -> Caso o "Texto ICMS" traga apenas uma alíquota (ex: 17%) sem citar ST, classifique OBRIGATORIAMENTE como "Tributação Normal". Se citar Isenção, classifique como "Isenção". NUNCA deduza ST apenas pela presença de um CEST.
+    2. PIS_COFINS: Retorne apenas a regra do Simples Nacional citada no texto (Ex: Alíquota Zero, Monofásico, Tributado Normalmente).
+    3. DESCRICAO: Responda apenas "sim" ou "nao", verificando se o nome do Produto do Cliente bate com a Descrição Oficial NCM.
+    4. CEST: Extraia apenas o código numérico de 7 dígitos da lista fornecida. Se a lista estiver vazia, retorne "N/A".
+    
+    DADOS DE ENTRADA:
+    Produto do Cliente: "{produto}"
     NCM: {ncm}
     Descrição Oficial NCM: "{desc_oficial}"
+    Texto PIS/COFINS: {pis_cofins}
+    Texto ICMS: {icms_completo}
+    Opções de CEST: {cest}
     
-    Tributação Encontrada no Lefisc:
-    - PIS/COFINS: {pis_cofins}
-    - ICMS (Alíquotas, Isenções e Reduções): {icms_completo}
-    - Relação de CESTs: {cest}
-    
-    Retorne a resposta estritamente no seguinte formato de chave-valor (sem markdown extra, sem negrito nos títulos, sem textos introdutórios):
-    DESCRICAO: [sim, se faz sentido, ou nao, seguido de breve justificativa]
-    ICMS: [Responda EXATAMENTE o que consta no texto do ICMS fornecido. Informe se é tributação normal, isenção ou redução. Se o texto não citar ST, não invente ST]
-    PIS_COFINS: [Leia a regra específica para o Simples Nacional no texto e informe apenas se é Alíquota Zero, Monofásico ou Tributado Normalmente]
-    CEST: [indique apenas o código numérico de 7 dígitos mais adequado da lista]
+    SAÍDA ESPERADA EM JSON PURO:
+    {{
+        "descricao": "sim",
+        "icms": "Tributação Normal",
+        "pis_cofins": "Alíquota Zero",
+        "cest": "3301301"
+    }}
     """
     try:
         response = model.generate_content(prompt)
-        return response.text.strip()
+        texto = response.text.strip()
+        
+        # Limpa formatações Markdown que a IA possa tentar colocar
+        if texto.startswith("```json"):
+            texto = texto[7:-3]
+        elif texto.startswith("```"):
+            texto = texto[3:-3]
+            
+        return json.loads(texto.strip())
     except Exception as e:
-        return f"Erro na IA: {e}"
+        return {"descricao": "ERRO", "icms": "ERRO", "pis_cofins": "ERRO", "cest": "ERRO"}
 
 # ==========================================
 # INTERFACE STREAMLIT E PROCESSAMENTO

@@ -243,7 +243,7 @@ if arquivo_up is not None:
         barra_progresso = st.progress(0)
         status_text = st.empty()
         
-         for i, row in df.iterrows():
+        for i, row in df.iterrows():
             produto = str(row.get('Descricao_Produto', ''))
             
             ncm_raw = str(row.get('NCM', ''))

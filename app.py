@@ -193,9 +193,12 @@ def extrair_piscofins(html_piscofins, opcao_escolhida):
 def auditar_com_gemini(produto, ncm, desc_oficial, pis_cofins, icms_completo, cest):
     prompt = f"""
     Você é um auditor fiscal especialista na legislação tributária brasileira.
-    Analise o enquadramento do produto com base nos dados oficiais do Lefisc abaixo:
+    Analise o enquadramento do produto com base nos dados oficiais do Lefisc abaixo.
     
-    ATENÇÃO: A empresa realiza vendas EXCLUSIVAMENTE PARA CONSUMIDOR FINAL. Leve isso em total consideração ao analisar as regras de isenção, redução e substituição.
+    ATENÇÃO ÀS REGRAS ESTRITAS DA ANÁLISE:
+    1. A empresa cliente é optante pelo SIMPLES NACIONAL.
+    2. A empresa realiza vendas EXCLUSIVAMENTE PARA CONSUMIDOR FINAL.
+    3. Para o ICMS, NUNCA deduza Substituição Tributária (ST) apenas pela existência de um código CEST. Baseie-se APENAS no texto exato do ICMS fornecido. Se houver notas de isenção ou redução, destaque-as.
     
     PRODUTO DO CLIENTE: "{produto}"
     NCM: {ncm}
@@ -206,10 +209,10 @@ def auditar_com_gemini(produto, ncm, desc_oficial, pis_cofins, icms_completo, ce
     - ICMS (Alíquotas, Isenções e Reduções): {icms_completo}
     - Relação de CESTs: {cest}
     
-    Retorne a resposta estritamente no seguinte formato de chave-valor (sem markdown extra, sem negrito nos títulos):
+    Retorne a resposta estritamente no seguinte formato de chave-valor (sem markdown extra, sem negrito nos títulos, sem textos introdutórios):
     DESCRICAO: [sim, se faz sentido, ou nao, seguido de breve justificativa]
-    ICMS: [informe de forma limpa se é tributação normal, substituição tributária, isenção ou alíquota reduzida]
-    PIS_COFINS: [informe se é monofásico, alíquota zero, cumulativo, não cumulativo ou tributado normalmente]
+    ICMS: [Responda EXATAMENTE o que consta no texto do ICMS fornecido. Informe se é tributação normal, isenção ou redução. Se o texto não citar ST, não invente ST]
+    PIS_COFINS: [Leia a regra específica para o Simples Nacional no texto e informe apenas se é Alíquota Zero, Monofásico ou Tributado Normalmente]
     CEST: [indique apenas o código numérico de 7 dígitos mais adequado da lista]
     """
     try:

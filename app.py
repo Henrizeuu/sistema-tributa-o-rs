@@ -77,7 +77,8 @@ class LefiscClient:
                 self.cache_ncm[ncm_limpa] = dados
                 return dados
             else:
-                return {"erro": f"Status {res.status_code}"}
+                # Agora ele vai cuspir a URL exata que tentou acessar e o motivo do bloqueio
+                return {"erro": f"Status {res.status_code} | Resposta: {res.text} | URL Testada: {url_ncm}"}
         except Exception as e:
             return {"erro": str(e)}
 

@@ -35,16 +35,21 @@ class LefiscClient:
         self.cache_cest = {}
 
     def autenticar(self):
-        url_login = "https://www.lefisc.com.br/"
+        url_login = "https://www.lefisc.com.br"
+        
+        # Mandando chaves duplicadas (maiúsculas e minúsculas) 
+        # para evitar qualquer bloqueio do ASP.NET
         payload = {
             "Usuario": self.usuario,
             "Senha": self.senha,
+            "usuario": self.usuario,
+            "senha": self.senha,
             "browserId": "d42e01f74d243ddbe00ee3acb9589f9c" 
         }
         
         try:
-            # Enviando como JSON e capturando o erro real
-            res = self.session.post(url_login, json=payload, timeout=10)
+            # A MÁGICA ESTÁ AQUI: data=payload envia como Form Data (Formulário real)
+            res = self.session.post(url_login, data=payload, timeout=10)
             
             if res.status_code == 200:
                 dados = res.json()
@@ -56,7 +61,6 @@ class LefiscClient:
                 })
                 return True
             else:
-                # SE O LEFISC BARRAR, ISSO AQUI VAI TE MOSTRAR O MOTIVO EXATO NA TELA
                 st.error(f"O servidor recusou o login. Código: {res.status_code} | Resposta: {res.text}")
                 return False
                 

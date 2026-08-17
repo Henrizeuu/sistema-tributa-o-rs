@@ -13,26 +13,30 @@ st.set_page_config(page_title="Auditoria NCM - Lefisc", layout="wide")
 
 try:
     genai.configure(api_key=st.secrets["gemini_api_key"])
-    # 1. Correção do Modelo da IA
     model = genai.GenerativeModel('gemini-3.5-flash-lite')
 except Exception as e:
     st.error("Erro ao configurar Gemini API. Verifique os Secrets.")
 
 # ==========================================
-# MOTOR HTTP - LEFISC CLIENT (ATUALIZADO)
+# MOTOR HTTP - LEFISC CLIENT (COM HASH FIXO)
 # ==========================================
 class LefiscClient:
     def __init__(self, usuario, senha):
         self.session = requests.Session()
+        # Headers idênticos aos do seu navegador
         self.session.headers.update({
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0.0.0 Safari/537.36",
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36",
             "Accept": "application/json, text/plain, */*",
+            "Referer": "https://www.lefisc.com.br/monitoramentoncm/",
+            "Origin": "https://www.lefisc.com.br",
+            "Accept-Language": "pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7"
         })
         self.usuario = usuario
         self.senha = senha
-        self.token = None
-        self.hash_login = None
-        self.hash_monitoramento = None # O hash secreto da NCM que descobrimos agora!
+        
+        # O Hash fixo mapeado da sua requisição bem-sucedida
+        self.hash_monitoramento = "64ad62a25fe48a9e8bcd84df737dd40b"
+        
         self.cache_ncm = {}
         self.cache_cest = {}
 
@@ -49,35 +53,17 @@ class LefiscClient:
             
             if res.status_code == 200:
                 dados = res.json()
-                self.token = dados.get("token")
-                self.hash_login = dados.get("hash")
+                token = dados.get("token")
                 id_cliente = dados.get("id")
                 
-                # Injeta os cookies idênticos aos do seu navegador
+                # Injeta os cookies exigidos pela sessão
                 self.session.cookies.update({
-                    "hash": self.hash_login,
-                    "token": self.token,
+                    "hash": self.hash_monitoramento,
+                    "token": token,
                     "usuario": self.usuario,
                     "login": "Sim",
                     "idCliente": str(id_cliente)
                 })
-                
-                # AGORA O PULO DO GATO: Acessa a página de monitoramento para capturar o hash correto da NCM
-                url_monitoramento = "https://www.lefisc.com.br/monitoramentoncm/"
-                res_mon = self.session.get(url_monitoramento, timeout=10)
-                
-                if res_mon.status_code == 200:
-                    soup = BeautifulSoup(res_mon.text, 'html.parser')
-                    # O script procura na página o trecho da URL que contém o hash de monitoramento
-                    # Exemplo: /api/monitoramentoNCM/Cliente/dadosNCM/2201.10.00/64ad62a2...
-                    import re
-                    match = re.search(r'/dadosNCM/[\d\.]+?/([a-fA-F0-9]{32})', res_mon.text)
-                    if match:
-                        self.hash_monitoramento = match.group(1)
-                    else:
-                        # Fallback caso mude: usa o hash do login se não achar na regex
-                        self.hash_monitoramento = self.hash_login
-                
                 return True
             else:
                 st.error(f"O servidor recusou o login. Código: {res.status_code} | Resposta: {res.text}")
@@ -92,19 +78,10 @@ class LefiscClient:
             return self.cache_ncm[ncm_limpa]
             
         ncm_formatada = f"{ncm_limpa[:4]}.{ncm_limpa[4:6]}.{ncm_limpa[6:]}"
-        
-        # Usa o hash de monitoramento capturado dinamicamente da página
-        hash_usar = self.hash_monitoramento if self.hash_monitoramento else self.hash_login
-        url_ncm = f"https://www.lefisc.com.br/api/monitoramentoNCM/Cliente/dadosNCM/{ncm_formatada}/{hash_usar}"
-        
-        headers_extras = {
-            "Referer": "https://www.lefisc.com.br/monitoramentoncm/",
-            "Origin": "https://www.lefisc.com.br",
-            "Accept": "application/json, text/plain, */*"
-        }
+        url_ncm = f"https://www.lefisc.com.br/api/monitoramentoNCM/Cliente/dadosNCM/{ncm_formatada}/{self.hash_monitoramento}"
         
         try:
-            res = self.session.get(url_ncm, headers=headers_extras, timeout=10)
+            res = self.session.get(url_ncm, timeout=10)
             if res.status_code == 200:
                 dados = res.json()
                 self.cache_ncm[ncm_limpa] = dados
@@ -189,7 +166,7 @@ def extrair_piscofins(html_piscofins, opcao_escolhida):
 
 def auditar_com_gemini(produto, ncm, desc_oficial, pis_cofins, icms, cest):
     prompt = f"""
-    Você é um auditor fiscal especialista na legislação tributária brasileira.
+    Você é un auditor fiscal especialista na legislação tributária brasileira.
     Analise o enquadramento do produto abaixo:
     
     PRODUTO DO CLIENTE: "{produto}"
@@ -266,12 +243,9 @@ if arquivo_up is not None:
         for i, row in df.iterrows():
             produto = str(row.get('Descricao_Produto', ''))
             
-            # 2. Correção Mestra da formatação do NCM no Excel
             ncm_raw = str(row.get('NCM', ''))
-            # Pega só o que vem antes do ponto decimal e filtra apenas os números
             ncm_raw = ncm_raw.split('.')[0]
             ncm = ''.join(filter(str.isdigit, ncm_raw))
-            # Garante que tenha 8 dígitos (ex: 03007000)
             ncm = ncm.zfill(8)
             
             status_text.text(f"Processando [{i+1}/{len(df)}]: {produto} (NCM Limpa: {ncm})")
@@ -303,7 +277,6 @@ if arquivo_up is not None:
             cest_list = lefisc.buscar_cest(ncm)
             parecer_ia = auditar_com_gemini(produto, ncm, desc_oficial, texto_piscofins, icms_estado, cest_list)
             
-            # 3. Adicionando TUDO no DataFrame Final!
             df.at[i, 'Descricao_Lefisc'] = desc_oficial
             df.at[i, 'PIS_COFINS'] = texto_piscofins
             df.at[i, 'CEST_Lefisc'] = cest_list

@@ -174,16 +174,15 @@ def auditar_com_gemini(produto, ncm, desc_oficial, pis_cofins, icms, cest):
     Descrição Oficial NCM: "{desc_oficial}"
     
     Tributação Encontrada no Lefisc:
-    - PIS/COFINS (Regra do Cenário): {pis_cofins}
-    - ICMS (Alíquota do Estado): {icms}
-    - Relação de CESTs disponíveis para esta NCM: {cest}
+    - PIS/COFINS: {pis_cofins}
+    - ICMS (Alíquota): {icms}
+    - Relação de CESTs: {cest}
     
-    Gere a resposta EXATAMENTE no formato abaixo, sem adicionar introduções ou textos extras:
-    
-    descrição: [Diga 'sim' se a descrição do produto faz sentido com a NCM, ou 'não' acompanhado de uma justificativa curta]
-    icms: [Informe se a tributação é normal, substituição tributária, isenção ou alíquota reduzida com base nos dados]
-    pis e cofins: [Informe se é monofásico, alíquota zero, cumulativo, não cumulativo ou tributado normalmente]
-    cest: [Escolha e indique o código CEST numérico de 7 dígitos mais adequado dentre a lista do Lefisc para este produto exato]
+    Retorne a resposta estritamente no seguinte formato de chave-valor (sem markdown extra, sem negrito nos títulos):
+    DESCRICAO: [sim, se faz sentido, ou nao, seguido de breve justificativa]
+    ICMS: [informe se é tributação normal, substituição tributária, isenção ou alíquota reduzida]
+    PIS_COFINS: [informe se é monofásico, alíquota zero, cumulativo, não cumulativo ou tributado normalmente]
+    CEST: [indique apenas o código numérico de 7 dígitos mais adequado da lista]
     """
     try:
         response = model.generate_content(prompt)
@@ -284,10 +283,31 @@ if arquivo_up is not None:
             cest_list = lefisc.buscar_cest(ncm)
             
             # Pede a análise estruturada para a IA
+            # Pede a análise estruturada para a IA
             parecer_ia = auditar_com_gemini(produto, ncm, desc_oficial, texto_piscofins, icms_estado, cest_list)
             
-            # ATRIBUI APENAS AS RESPOSTAS DIRETAS DA IA NA PLANILHA
-            df.at[i, 'Parecer_IA'] = parecer_ia
+            # Fatiando a resposta da IA para criar colunas separadas de verdade no Excel
+            res_desc, res_icms, res_pis, res_cest = "N/A", "N/A", "N/A", "N/A"
+            
+            for linha in parecer_ia.split('\n'):
+                if ":" in linha:
+                    chave, valor = linha.split(":", 1)
+                    chave = chave.strip().upper()
+                    valor = valor.strip()
+                    if "DESCRICAO" in chave:
+                        res_desc = valor
+                    elif "ICMS" in chave:
+                        res_icms = valor
+                    elif "PIS" in chave:
+                        res_pis = valor
+                    elif "CEST" in chave:
+                        res_cest = valor
+
+            # Atribuindo cada dado à sua respectiva coluna limpa
+            df.at[i, 'Analise_Descricao'] = res_desc
+            df.at[i, 'Tributacao_ICMS'] = res_icms
+            df.at[i, 'PIS_COFINS'] = res_pis
+            df.at[i, 'Codigo_CEST'] = res_cest
             
             barra_progresso.progress((i + 1) / len(df))
             time.sleep(1) 
@@ -295,8 +315,7 @@ if arquivo_up is not None:
         status_text.text("Auditoria Concluída!")
         
         # Mantém apenas as colunas essenciais do sistema + a coluna formatada da IA
-        colunas_desejadas = ['NCM', 'Descricao_Produto', 'Parecer_IA']
-        # Se houver outras colunas extras na planilha original que você queira manter, pode ajustar aqui
+        colunas_desejadas = ['NCM', 'Descricao_Produto', 'Analise_Descricao', 'Tributacao_ICMS', 'PIS_COFINS', 'Codigo_CEST']
         df_final = df[[col for col in colunas_desejadas if col in df.columns]]
 
         buffer_final = io.BytesIO()

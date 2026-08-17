@@ -18,12 +18,11 @@ except Exception as e:
     st.error("Erro ao configurar Gemini API. Verifique os Secrets.")
 
 # ==========================================
-# MOTOR HTTP - LEFISC CLIENT (COM HASH FIXO)
+# MOTOR HTTP - LEFISC CLIENT (COM HASH FIXO E PARSER XML)
 # ==========================================
 class LefiscClient:
     def __init__(self, usuario, senha):
         self.session = requests.Session()
-        # Headers idênticos aos do seu navegador
         self.session.headers.update({
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36",
             "Accept": "application/json, text/plain, */*",
@@ -34,7 +33,6 @@ class LefiscClient:
         self.usuario = usuario
         self.senha = senha
         
-        # O Hash fixo mapeado da sua requisição bem-sucedida
         self.hash_monitoramento = "64ad62a25fe48a9e8bcd84df737dd40b"
         
         self.cache_ncm = {}
@@ -56,7 +54,6 @@ class LefiscClient:
                 token = dados.get("token")
                 id_cliente = dados.get("id")
                 
-                # Injeta os cookies exigidos pela sessão
                 self.session.cookies.update({
                     "hash": self.hash_monitoramento,
                     "token": token,
@@ -83,7 +80,36 @@ class LefiscClient:
         try:
             res = self.session.get(url_ncm, timeout=10)
             if res.status_code == 200:
-                dados = res.json()
+                # O Lefisc retorna um XML, então raspar com BeautifulSoup é a melhor saída
+                soup = BeautifulSoup(res.text, 'html.parser')
+                
+                dados = {
+                    'descricao': soup.find('descricao').text if soup.find('descricao') else 'N/A',
+                    'piscofins': soup.find('piscofins').text if soup.find('piscofins') else '',
+                    'aliquotas': [],
+                    'isencoes': [],
+                    'beneficios': []
+                }
+                
+                # Coletando Alíquotas normais
+                for alq in soup.find_all('cli_aliquotas'):
+                    est = alq.find('estado').text if alq.find('estado') else ''
+                    icms = alq.find('icms').text if alq.find('icms') else ''
+                    notas = alq.find('notas').text if alq.find('notas') else ''
+                    dados['aliquotas'].append({'estado': est, 'icms': icms, 'notas': notas})
+                
+                # Coletando Isenções
+                for ise in soup.find_all('cli_notas_isencao'):
+                    uf = ise.find('uf').text if ise.find('uf') else ''
+                    notas = ise.find('notas').text if ise.find('notas') else ''
+                    dados['isencoes'].append({'estado': uf, 'notas': notas})
+                    
+                # Coletando Benefícios (Reduções)
+                for ben in soup.find_all('cli_notas_beneficios'):
+                    uf = ben.find('uf').text if ben.find('uf') else ''
+                    notas = ben.find('notas').text if ben.find('notas') else ''
+                    dados['beneficios'].append({'estado': uf, 'notas': notas})
+
                 self.cache_ncm[ncm_limpa] = dados
                 return dados
             else:
@@ -135,7 +161,7 @@ class LefiscClient:
             return f"Erro ao buscar CEST: {e}"
 
 # ==========================================
-# FUNÇÕES DE APOIO
+# FUNÇÕES DE APOIO E INTELIGÊNCIA ARTIFICIAL
 # ==========================================
 def extrair_piscofins(html_piscofins, opcao_escolhida):
     if not html_piscofins:
@@ -164,10 +190,12 @@ def extrair_piscofins(html_piscofins, opcao_escolhida):
                 
     return texto_puro[idx_inicio:idx_fim].strip()
 
-def auditar_com_gemini(produto, ncm, desc_oficial, pis_cofins, icms, cest):
+def auditar_com_gemini(produto, ncm, desc_oficial, pis_cofins, icms_completo, cest):
     prompt = f"""
     Você é um auditor fiscal especialista na legislação tributária brasileira.
     Analise o enquadramento do produto com base nos dados oficiais do Lefisc abaixo:
+    
+    ATENÇÃO: A empresa realiza vendas EXCLUSIVAMENTE PARA CONSUMIDOR FINAL. Leve isso em total consideração ao analisar as regras de isenção, redução e substituição.
     
     PRODUTO DO CLIENTE: "{produto}"
     NCM: {ncm}
@@ -175,12 +203,12 @@ def auditar_com_gemini(produto, ncm, desc_oficial, pis_cofins, icms, cest):
     
     Tributação Encontrada no Lefisc:
     - PIS/COFINS: {pis_cofins}
-    - ICMS (Alíquota): {icms}
+    - ICMS (Alíquotas, Isenções e Reduções): {icms_completo}
     - Relação de CESTs: {cest}
     
     Retorne a resposta estritamente no seguinte formato de chave-valor (sem markdown extra, sem negrito nos títulos):
     DESCRICAO: [sim, se faz sentido, ou nao, seguido de breve justificativa]
-    ICMS: [informe se é tributação normal, substituição tributária, isenção ou alíquota reduzida]
+    ICMS: [informe de forma limpa se é tributação normal, substituição tributária, isenção ou alíquota reduzida]
     PIS_COFINS: [informe se é monofásico, alíquota zero, cumulativo, não cumulativo ou tributado normalmente]
     CEST: [indique apenas o código numérico de 7 dígitos mais adequado da lista]
     """
@@ -191,7 +219,7 @@ def auditar_com_gemini(produto, ncm, desc_oficial, pis_cofins, icms, cest):
         return f"Erro na IA: {e}"
 
 # ==========================================
-# INTERFACE STREAMLIT
+# INTERFACE STREAMLIT E PROCESSAMENTO
 # ==========================================
 st.title("⚖️ Auditoria Fiscal Automática - NCM")
 st.markdown("Faça o upload da planilha do sistema e cruze com a base oficial do Lefisc.")
@@ -252,41 +280,50 @@ if arquivo_up is not None:
             
             status_text.text(f"Processando [{i+1}/{len(df)}]: {produto} (NCM Limpa: {ncm})")
             
-            desc_oficial = "N/A"
-            texto_piscofins = "N/A"
-            icms_estado = "N/A"
-            cest_list = "N/A"
-            
             dados_ncm = lefisc.buscar_dados_ncm(ncm)
             
             if dados_ncm:
                 if isinstance(dados_ncm, dict) and "erro" in dados_ncm:
                     st.warning(f"Erro na NCM {ncm}: O Lefisc retornou {dados_ncm['erro']}")
+                    continue
                 else:
-                    if isinstance(dados_ncm, list) and len(dados_ncm) > 0:
-                        item_ncm = dados_ncm[0]
-                    elif isinstance(dados_ncm, dict):
-                        item_ncm = dados_ncm
-                    else:
-                        item_ncm = {}
-
-                    desc_oficial = item_ncm.get('descricao', 'N/A')
-                    html_piscofins = item_ncm.get('piscofins', '')
+                    # Agora os dados são um dicionário estruturado que montamos com o XML
+                    desc_oficial = dados_ncm.get('descricao', 'N/A')
+                    html_piscofins = dados_ncm.get('piscofins', '')
                     texto_piscofins = extrair_piscofins(html_piscofins, letra_piscofins)
                     
-                    aliquotas = item_ncm.get('aliquotas', [])
-                    for alq in aliquotas:
-                        if alq.get('estado') == uf_selecionada:
-                            icms_estado = alq.get('icms', 'Não encontrado')
+                    # 1. Puxa Alíquota e Notas
+                    icms_str = ""
+                    for alq in dados_ncm.get('aliquotas', []):
+                        if alq['estado'].upper() == uf_selecionada.upper():
+                            icms_str = f"Alíquota: {alq['icms']} | Notas: {alq['notas']}"
                             break
+                    
+                    # 2. Puxa Isenções (Se houver)
+                    isencao_str = ""
+                    for ise in dados_ncm.get('isencoes', []):
+                        if ise['estado'].upper() == uf_selecionada.upper() and ise['notas']:
+                            isencao_str = f"\nIsenção: {ise['notas']}"
+                            break
+                    
+                    # 3. Puxa Benefícios/Reduções (Se houver)
+                    beneficio_str = ""
+                    for ben in dados_ncm.get('beneficios', []):
+                        if ben['estado'].upper() == uf_selecionada.upper() and ben['notas']:
+                            beneficio_str = f"\nBenefício/Redução: {ben['notas']}"
+                            break
+                    
+                    # Junta tudo pro Gemini ter o contexto total
+                    icms_completo = f"{icms_str}{isencao_str}{beneficio_str}".strip()
+                    if not icms_completo:
+                        icms_completo = "Não encontrado"
             
             cest_list = lefisc.buscar_cest(ncm)
             
-            # Pede a análise estruturada para a IA
-            # Pede a análise estruturada para a IA
-            parecer_ia = auditar_com_gemini(produto, ncm, desc_oficial, texto_piscofins, icms_estado, cest_list)
+            # Pede a análise estruturada para a IA mandando todo o cenário montado
+            parecer_ia = auditar_com_gemini(produto, ncm, desc_oficial, texto_piscofins, icms_completo, cest_list)
             
-            # Fatiando a resposta da IA para criar colunas separadas de verdade no Excel
+            # Fatiando a resposta da IA para criar colunas separadas
             res_desc, res_icms, res_pis, res_cest = "N/A", "N/A", "N/A", "N/A"
             
             for linha in parecer_ia.split('\n'):
@@ -303,7 +340,7 @@ if arquivo_up is not None:
                     elif "CEST" in chave:
                         res_cest = valor
 
-            # Atribuindo cada dado à sua respectiva coluna limpa
+            # Atribuindo cada dado à sua respectiva coluna
             df.at[i, 'Analise_Descricao'] = res_desc
             df.at[i, 'Tributacao_ICMS'] = res_icms
             df.at[i, 'PIS_COFINS'] = res_pis
@@ -314,7 +351,7 @@ if arquivo_up is not None:
             
         status_text.text("Auditoria Concluída!")
         
-        # Mantém apenas as colunas essenciais do sistema + a coluna formatada da IA
+        # Mantém apenas as colunas essenciais
         colunas_desejadas = ['NCM', 'Descricao_Produto', 'Analise_Descricao', 'Tributacao_ICMS', 'PIS_COFINS', 'Codigo_CEST']
         df_final = df[[col for col in colunas_desejadas if col in df.columns]]
 

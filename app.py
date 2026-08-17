@@ -13,7 +13,7 @@ st.set_page_config(page_title="Auditoria NCM - Lefisc", layout="wide")
 
 try:
     genai.configure(api_key=st.secrets["gemini_api_key"])
-    model = genai.GenerativeModel('gemini-2.0-flash')
+    model = genai.GenerativeModel('gemini-2.5-flash-lite')
 except Exception as e:
     st.error("Erro ao configurar Gemini API. Verifique os Secrets.")
 

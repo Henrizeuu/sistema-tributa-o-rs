@@ -19,7 +19,7 @@ except Exception as e:
     st.error("Erro ao configurar Gemini API. Verifique os Secrets.")
 
 # ==========================================
-# MOTOR HTTP - LEFISC CLIENT
+# MOTOR HTTP - LEFISC CLIENT (ATUALIZADO)
 # ==========================================
 class LefiscClient:
     def __init__(self, usuario, senha):
@@ -31,7 +31,8 @@ class LefiscClient:
         self.usuario = usuario
         self.senha = senha
         self.token = None
-        self.hash_auth = None
+        self.hash_login = None
+        self.hash_monitoramento = None # O hash secreto da NCM que descobrimos agora!
         self.cache_ncm = {}
         self.cache_cest = {}
 
@@ -49,26 +50,33 @@ class LefiscClient:
             if res.status_code == 200:
                 dados = res.json()
                 self.token = dados.get("token")
-                self.hash_auth = dados.get("hash")
+                self.hash_login = dados.get("hash")
+                id_cliente = dados.get("id")
                 
-                # 1. PEGANDO O ID DO CLIENTE!
-                self.id_cliente = dados.get("id") 
-                
-                # 2. Autorização via Header (adicionando o IdCliente aqui também)
-                self.session.headers.update({
-                    "Authorization": f"Bearer {self.token}",
-                    "token": self.token,
-                    "IdCliente": str(self.id_cliente)
-                })
-                
-                # 3. Injetando TODOS os cookies exigidos pelo sistema deles (inclusive o idCliente)
+                # Injeta os cookies idênticos aos do seu navegador
                 self.session.cookies.update({
-                    "hash": self.hash_auth,
+                    "hash": self.hash_login,
                     "token": self.token,
                     "usuario": self.usuario,
                     "login": "Sim",
-                    "idCliente": str(self.id_cliente)
+                    "idCliente": str(id_cliente)
                 })
+                
+                # AGORA O PULO DO GATO: Acessa a página de monitoramento para capturar o hash correto da NCM
+                url_monitoramento = "https://www.lefisc.com.br/monitoramentoncm/"
+                res_mon = self.session.get(url_monitoramento, timeout=10)
+                
+                if res_mon.status_code == 200:
+                    soup = BeautifulSoup(res_mon.text, 'html.parser')
+                    # O script procura na página o trecho da URL que contém o hash de monitoramento
+                    # Exemplo: /api/monitoramentoNCM/Cliente/dadosNCM/2201.10.00/64ad62a2...
+                    import re
+                    match = re.search(r'/dadosNCM/[\d\.]+?/([a-fA-F0-9]{32})', res_mon.text)
+                    if match:
+                        self.hash_monitoramento = match.group(1)
+                    else:
+                        # Fallback caso mude: usa o hash do login se não achar na regex
+                        self.hash_monitoramento = self.hash_login
                 
                 return True
             else:
@@ -84,9 +92,11 @@ class LefiscClient:
             return self.cache_ncm[ncm_limpa]
             
         ncm_formatada = f"{ncm_limpa[:4]}.{ncm_limpa[4:6]}.{ncm_limpa[6:]}"
-        url_ncm = f"https://www.lefisc.com.br/api/monitoramentoNCM/Cliente/dadosNCM/{ncm_formatada}/{self.hash_auth}"
         
-        # A "Carteirada": Mostrando pro servidor que estamos navegando dentro do site
+        # Usa o hash de monitoramento capturado dinamicamente da página
+        hash_usar = self.hash_monitoramento if self.hash_monitoramento else self.hash_login
+        url_ncm = f"https://www.lefisc.com.br/api/monitoramentoNCM/Cliente/dadosNCM/{ncm_formatada}/{hash_usar}"
+        
         headers_extras = {
             "Referer": "https://www.lefisc.com.br/monitoramentoncm/",
             "Origin": "https://www.lefisc.com.br",
@@ -100,7 +110,7 @@ class LefiscClient:
                 self.cache_ncm[ncm_limpa] = dados
                 return dados
             else:
-                return {"erro": f"Status {res.status_code} | Resposta: {res.text} | URL Testada: {url_ncm}"}
+                return {"erro": f"Status {res.status_code} | Resposta: {res.text}"}
         except Exception as e:
             return {"erro": str(e)}
 

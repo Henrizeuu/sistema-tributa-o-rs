@@ -243,7 +243,7 @@ if arquivo_up is not None:
         barra_progresso = st.progress(0)
         status_text = st.empty()
         
-        for i, row in df.iterrows():
+         for i, row in df.iterrows():
             produto = str(row.get('Descricao_Produto', ''))
             
             ncm_raw = str(row.get('NCM', ''))
@@ -264,7 +264,6 @@ if arquivo_up is not None:
                 if isinstance(dados_ncm, dict) and "erro" in dados_ncm:
                     st.warning(f"Erro na NCM {ncm}: O Lefisc retornou {dados_ncm['erro']}")
                 else:
-                    # BLINDAGEM MESTRA: Se o Lefisc retornar uma lista, pega o primeiro item. Se for dicionário, usa direto.
                     if isinstance(dados_ncm, list) and len(dados_ncm) > 0:
                         item_ncm = dados_ncm[0]
                     elif isinstance(dados_ncm, dict):
@@ -283,27 +282,31 @@ if arquivo_up is not None:
                             break
             
             cest_list = lefisc.buscar_cest(ncm)
+            
+            # Pede a análise estruturada para a IA
             parecer_ia = auditar_com_gemini(produto, ncm, desc_oficial, texto_piscofins, icms_estado, cest_list)
             
-            df.at[i, 'Descricao_Lefisc'] = desc_oficial
-            df.at[i, 'PIS_COFINS'] = texto_piscofins
-            df.at[i, 'CEST_Lefisc'] = cest_list
-            df.at[i, f'ICMS_{uf_selecionada}'] = icms_estado
-            df.at[i, 'Parecer_Auditoria_IA'] = parecer_ia
+            # ATRIBUI APENAS AS RESPOSTAS DIRETAS DA IA NA PLANILHA
+            df.at[i, 'Parecer_IA'] = parecer_ia
             
             barra_progresso.progress((i + 1) / len(df))
             time.sleep(1) 
             
         status_text.text("Auditoria Concluída!")
         
+        # Mantém apenas as colunas essenciais do sistema + a coluna formatada da IA
+        colunas_desejadas = ['NCM', 'Descricao_Produto', 'Parecer_IA']
+        # Se houver outras colunas extras na planilha original que você queira manter, pode ajustar aqui
+        df_final = df[[col for col in colunas_desejadas if col in df.columns]]
+
         buffer_final = io.BytesIO()
         with pd.ExcelWriter(buffer_final, engine='openpyxl') as writer:
-            df.to_excel(writer, index=False)
+            df_final.to_excel(writer, index=False)
             
         st.success("Relatório gerado com sucesso!")
         st.download_button(
-            label="⬇️ Baixar Resultado da Auditoria",
+            label="⬇️ Baixar Resultado da Auditoria Limpo",
             data=buffer_final.getvalue(),
-            file_name="resultado_auditoria.xlsx",
+            file_name="resultado_auditoria_limpo.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )

@@ -258,7 +258,7 @@ if arquivo_up is not None:
             icms_estado = "N/A"
             cest_list = "N/A"
             
-        dados_ncm = lefisc.buscar_dados_ncm(ncm)
+            dados_ncm = lefisc.buscar_dados_ncm(ncm)
             
             if dados_ncm:
                 if isinstance(dados_ncm, dict) and "erro" in dados_ncm:
